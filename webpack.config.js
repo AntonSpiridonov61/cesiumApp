@@ -17,7 +17,6 @@ module.exports = {
         sourcePrefix: ''
     },
     amd: {
-
         toUrlUndefined: true
     },
     resolve: {
@@ -30,9 +29,15 @@ module.exports = {
         rules: [{
             test: /\.css$/,
             use: [ 'style-loader', 'css-loader' ]
-        }, {
-            test: /\.(png|gif|jpg|jpeg|svg|xml|json)$/,
+        }, 
+        {
+            test: /\.(png|gif|jpg|jpeg|svg|xml)$/,
             use: [ 'url-loader' ]
+        },
+        {
+            test: /\.json$/,
+            loader: 'json-loader',
+            type: 'javascript/auto',
         }]
     },
     plugins: [
