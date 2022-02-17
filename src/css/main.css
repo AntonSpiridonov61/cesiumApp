@@ -5,3 +5,11 @@ html, body, #cesiumContainer {
 	padding: 0;
 	overflow: hidden;
 }
+
+#toolbar {
+    position: absolute;
+	float: left;
+	z-index: 100;
+	top: 5px;
+	left: 10px;
+}
