@@ -14,7 +14,11 @@ import {
         HeightReference,
         ColorMaterialProperty,
         CallbackProperty,
-        PolygonHierarchy
+        PolygonHierarchy,
+        Camera,
+        CameraEventAggregator,
+        CameraEventType,
+        Cartesian3
     } from "cesium";
 import "cesium/Widgets/widgets.css";
 import "../src/css/main.css";
@@ -63,63 +67,64 @@ scene.primitives.add(new Primitive({
 Sandcastle.addToolbarButton("Polygon", function () { 
     terminateShape();
     drawingMode = 'polygon';
+    viewer.scene.screenSpaceCameraController.enableInputs = false;
 });
+
 Sandcastle.addToolbarButton("Line", function () {
     terminateShape();
     drawingMode = 'line';
+    viewer.scene.screenSpaceCameraController.enableInputs = false;
 });
 Sandcastle.addToolbarButton("Clear", function () { clearView() });
-Sandcastle.addToolbarButton("GetCoord", function () { getCoordinates() });
+Sandcastle.addToolbarButton("GetCoord", function () { 
+    getCoordinates()
+    viewer.scene.screenSpaceCameraController.enableInputs = true;
+});
 
 ///////////////////
 
-let drawingMode = '';
-let activeShapePoints = [];
-let activeShape;
-let floatingPoint;
-let shape;
-
 function createPoint(worldPosition) {
-    let point = viewer.entities.add({
-        position : worldPosition,
-        point : {
-            color : Color.AQUA,
-            pixelSize : 3,
-            heightReference: HeightReference.CLAMP_TO_GROUND
-        }
+    const point = viewer.entities.add({
+      position: worldPosition,
+      point: {
+        color: Color.WHITE,
+        pixelSize: 5,
+        heightReference: HeightReference.CLAMP_TO_GROUND,
+      },
     });
-    
     return point;
-}
-
+  }
+let drawingMode = "line";
 function drawShape(positionData) {
-    if (drawingMode === 'line') {
+    let shape;
+    if (drawingMode === "line") {
         shape = viewer.entities.add({
-            polyline : {
-                positions : positionData,
-                clampToGround : true,
-                width : 3
-            }
+            polyline: {
+                positions: positionData,
+                clampToGround: true,
+                width: 3,
+            },
         });
-    }
-    else if (drawingMode === 'polygon') {
+    } else if (drawingMode === "polygon") {
         shape = viewer.entities.add({
             polygon: {
                 hierarchy: positionData,
-                material: new ColorMaterialProperty(Color.AQUA.withAlpha(0.2))
-            }
+                material: new ColorMaterialProperty(
+                    Color.WHITE.withAlpha(0.7)
+                ),
+            },
         });
     }
-    
     return shape;
 }
-
-
+let activeShapePoints = [];
+let activeShape;
+let floatingPoint;
 const handler = new ScreenSpaceEventHandler(viewer.canvas);
 
-handler.setInputAction(function(event) {
+handler.setInputAction(function (event) {
+    console.log(event);
     const earthPosition = viewer.scene.pickPosition(event.position);
-
     if (defined(earthPosition)) {
         if (activeShapePoints.length === 0) {
             floatingPoint = createPoint(earthPosition);
@@ -137,17 +142,21 @@ handler.setInputAction(function(event) {
     }
 }, ScreenSpaceEventType.LEFT_CLICK);
 
-handler.setInputAction(function(event) {
-    if (defined(floatingPoint)) {
-        const newPosition = viewer.scene.pickPosition(event.endPosition);
-        if (defined(newPosition)) {
-            floatingPoint.position.setValue(newPosition);
-            activeShapePoints.pop();
-            activeShapePoints.push(newPosition);
-        }
+handler.setInputAction(function (event) {
+if (defined(floatingPoint)) {
+    console.log(event);
+    const startPosition = viewer.scene.pickPosition(event.startPosition);
+    const newPosition = viewer.scene.pickPosition(event.endPosition);
+    if (defined(newPosition)) {
+        createPoint(startPosition);
+        createPoint(newPosition);
+        // floatingPoint.position.setValue(newPosition);
+        // activeShapePoints.pop();
+        // activeShapePoints.push(newPosition);
     }
+}
 }, ScreenSpaceEventType.MOUSE_MOVE);
-
+// Redraw the shape so it's not dynamic and remove the dynamic shape.
 function terminateShape() {
     activeShapePoints.pop();
     drawShape(activeShapePoints);
@@ -157,13 +166,15 @@ function terminateShape() {
     activeShape = undefined;
     activeShapePoints = [];
 }
-
-handler.setInputAction(function(event) {
+handler.setInputAction(function (event) {
     terminateShape();
 }, ScreenSpaceEventType.RIGHT_CLICK);
 
+
+
+
 function clearView() {
-    viewer.entities.removeAll(shape);
+    // viewer.entities.removeAll(shape);
     viewer.entities.remove(floatingPoint);
     viewer.entities.remove(activeShape);
 }
