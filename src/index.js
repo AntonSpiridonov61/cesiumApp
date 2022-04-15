@@ -49,7 +49,8 @@ for (let i = 0; i < data.length - 1; i++) {
     instances.push(new GeometryInstance({
         geometry : new RectangleGeometry({
             rectangle : Rectangle.fromDegrees(data[i][1], data[i][0], data[i][1] + 1.0, data[i][0] + 1.0),
-            vertexFormat: PerInstanceColorAppearance.VERTEX_FORMAT
+            vertexFormat: PerInstanceColorAppearance.VERTEX_FORMAT,
+            zIndex: 100
         }),
         id : data[i],
         attributes : {
@@ -87,12 +88,12 @@ Sandcastle.addToolbarButton("GetCoord", function () {
 
 function createPoint(worldPosition) {
     const point = viewer.entities.add({
-      position: worldPosition,
-      point: {
-        color: Color.WHITE,
-        pixelSize: 5,
-        heightReference: HeightReference.CLAMP_TO_GROUND,
-      },
+        position: worldPosition,
+        point: {
+            color: Color.WHITE,
+            pixelSize: 5,
+            heightReference: HeightReference.CLAMP_TO_GROUND,
+        },
     });
     return point;
   }
@@ -109,8 +110,8 @@ function drawShape(positionData) {
         });
     } else if (drawingMode === "polygon") {
         shape = viewer.entities.add({
-            polygon: {
-                hierarchy: positionData,
+            rectangle: {
+                coordinates: positionData,
                 material: new ColorMaterialProperty(
                     Color.WHITE.withAlpha(0.7)
                 ),
@@ -146,9 +147,16 @@ function drawRectangle(event, startPosition) {
         )
     );
     
-    console.log(activeShapePoints);
+    // console.log(activeShapePoints);
+    // floatingPoint.position.setValue(endPosition);
+    // floatingPoint1.position.setValue(new Cartesian3(
+    //     endPosition.x, startPosition.y, startPosition.z
+    // ));
+    // floatingPoint2.position.setValue(new Cartesian3(
+    //     startPosition.x, endPosition.y, endPosition.z
+    // ));
     const dynamicPositions = new CallbackProperty(function () {
-        return new PolygonHierarchy(activeShapePoints);
+        return new Rectangle.fromCartesianArray(activeShapePoints);
     }, false);
     drawShape(dynamicPositions);
 }
@@ -177,14 +185,8 @@ handler.setInputAction(function (event) {
     handler.setInputAction(function (event) {
         if (drawingMode === "line") drawLasso(event);
         if (drawingMode === "polygon") {
-            // const endPosition = viewer.scene.pickPosition(event.endPosition);
-            // floatingPoint.position.setValue(endPosition);
-            // floatingPoint1.position.setValue(new Cartesian3(
-            //     endPosition.x, startPosition.y, endPosition.z
-            // ));
-            // floatingPoint2.position.setValue(new Cartesian3(
-            //     startPosition.x, endPosition.y, endPosition.z
-            // ));
+            const endPosition = viewer.scene.pickPosition(event.endPosition);
+            
             drawRectangle(event, startPosition);
         }
     }, ScreenSpaceEventType.MOUSE_MOVE);
@@ -209,6 +211,8 @@ handler.setInputAction(function (event) {
 
 handler.setInputAction(function (event) {
     console.log("LeftUp");
+    activeShapePoints = [];
+    activeShape = undefined;
     handler.removeInputAction(ScreenSpaceEventType.MOUSE_MOVE);
 }, ScreenSpaceEventType.LEFT_UP);
 
