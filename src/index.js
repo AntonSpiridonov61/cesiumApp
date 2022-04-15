@@ -41,6 +41,7 @@ const viewer = new Viewer('cesiumContainer', {
 });
 
 const scene = viewer.scene;
+viewer.scene.globe.depthTestAgainstTerrain = true;
 
 let instances = [];
 for (let i = 0; i < data.length - 1; i++) {
@@ -77,6 +78,7 @@ Sandcastle.addToolbarButton("Line", function () {
 });
 Sandcastle.addToolbarButton("Clear", function () { clearView() });
 Sandcastle.addToolbarButton("GetCoord", function () { 
+    drawingMode = "none";
     getCoordinates()
     viewer.scene.screenSpaceCameraController.enableInputs = true;
 });
@@ -94,7 +96,7 @@ function createPoint(worldPosition) {
     });
     return point;
   }
-let drawingMode = "line";
+
 function drawShape(positionData) {
     let shape;
     if (drawingMode === "line") {
@@ -117,46 +119,114 @@ function drawShape(positionData) {
     }
     return shape;
 }
+
+function drawLasso(event) {
+    console.log("moved " + event.startPosition);
+    const startPosition = viewer.scene.pickPosition(event.startPosition);
+    const endPosition = viewer.scene.pickPosition(event.endPosition);
+    if (defined(endPosition) && defined(startPosition)) {
+        // createPoint(startPosition);
+        drawShape([startPosition, endPosition]);
+        createPoint(endPosition);
+    }
+}
+
+function drawRectangle(event, startPosition) {
+    if (activeShapePoints.length > 1) activeShapePoints.splice(1, 3)
+    const endPosition = viewer.scene.pickPosition(event.endPosition);
+    activeShapePoints.push(
+        new Cartesian3(
+            endPosition.x, startPosition.y, endPosition.z
+        )
+    );
+    activeShapePoints.push(endPosition);
+    activeShapePoints.push(
+        new Cartesian3(
+            startPosition.x, endPosition.y, endPosition.z
+        )
+    );
+    
+    console.log(activeShapePoints);
+    const dynamicPositions = new CallbackProperty(function () {
+        return new PolygonHierarchy(activeShapePoints);
+    }, false);
+    drawShape(dynamicPositions);
+}
+
+function createNewPoint(startPosition, newPosition) {
+
+}
+
+let drawingMode = "none";
 let activeShapePoints = [];
 let activeShape;
 let floatingPoint;
+let floatingPoint1;
+let floatingPoint2;
 const handler = new ScreenSpaceEventHandler(viewer.canvas);
 
 handler.setInputAction(function (event) {
-    console.log(event);
-    const earthPosition = viewer.scene.pickPosition(event.position);
-    if (defined(earthPosition)) {
-        if (activeShapePoints.length === 0) {
-            floatingPoint = createPoint(earthPosition);
-            activeShapePoints.push(earthPosition);
-            const dynamicPositions = new CallbackProperty(function () {
-                if (drawingMode === "polygon") {
-                    return new PolygonHierarchy(activeShapePoints);
-                }
-                return activeShapePoints;
-            }, false);
-            activeShape = drawShape(dynamicPositions);
+    console.log("leftDown");
+    const startPosition = viewer.scene.pickPosition(event.position);
+    createPoint(startPosition);
+    floatingPoint = createPoint(startPosition);
+    floatingPoint1 = createPoint(startPosition);
+    floatingPoint2 = createPoint(startPosition);
+    activeShapePoints.push(startPosition);
+
+    handler.setInputAction(function (event) {
+        if (drawingMode === "line") drawLasso(event);
+        if (drawingMode === "polygon") {
+            // const endPosition = viewer.scene.pickPosition(event.endPosition);
+            // floatingPoint.position.setValue(endPosition);
+            // floatingPoint1.position.setValue(new Cartesian3(
+            //     endPosition.x, startPosition.y, endPosition.z
+            // ));
+            // floatingPoint2.position.setValue(new Cartesian3(
+            //     startPosition.x, endPosition.y, endPosition.z
+            // ));
+            drawRectangle(event, startPosition);
         }
-        activeShapePoints.push(earthPosition);
-        createPoint(earthPosition);
-    }
-}, ScreenSpaceEventType.LEFT_CLICK);
+    }, ScreenSpaceEventType.MOUSE_MOVE);
+
+    // const earthPosition = viewer.scene.pickPosition(event.position);
+    // if (defined(earthPosition)) {
+    //     if (activeShapePoints.length === 0) {
+    //         floatingPoint = createPoint(earthPosition);
+    //         activeShapePoints.push(earthPosition);
+    //         const dynamicPositions = new CallbackProperty(function () {
+    //             if (drawingMode === "polygon") {
+    //                 return new PolygonHierarchy(activeShapePoints);
+    //             }
+    //             return activeShapePoints;
+    //         }, false);
+    //         activeShape = drawShape(dynamicPositions);
+    //     }
+    //     activeShapePoints.push(earthPosition);
+    //     createPoint(earthPosition);
+    // }
+}, ScreenSpaceEventType.LEFT_DOWN);
 
 handler.setInputAction(function (event) {
-if (defined(floatingPoint)) {
-    console.log(event);
-    const startPosition = viewer.scene.pickPosition(event.startPosition);
-    const newPosition = viewer.scene.pickPosition(event.endPosition);
-    if (defined(newPosition)) {
-        createPoint(startPosition);
-        createPoint(newPosition);
-        // floatingPoint.position.setValue(newPosition);
-        // activeShapePoints.pop();
-        // activeShapePoints.push(newPosition);
-    }
-}
-}, ScreenSpaceEventType.MOUSE_MOVE);
-// Redraw the shape so it's not dynamic and remove the dynamic shape.
+    console.log("LeftUp");
+    handler.removeInputAction(ScreenSpaceEventType.MOUSE_MOVE);
+}, ScreenSpaceEventType.LEFT_UP);
+
+// handler.setInputAction(function (event) {
+// if (defined(floatingPoint)) {
+//     const startPosition = viewer.scene.pickPosition(event.startPosition);
+//     const newPosition = viewer.scene.pickPosition(event.endPosition);
+//     if (defined(newPosition)) {
+//         createPoint(startPosition);
+//         drawShape([startPosition, newPosition]);
+//         createPoint(newPosition);
+//         // floatingPoint.position.setValue(newPosition);
+//         // activeShapePoints.pop();
+//         // activeShapePoints.push(newPosition);
+//     }
+// }
+// }, ScreenSpaceEventType.MOUSE_MOVE);
+
 function terminateShape() {
     activeShapePoints.pop();
     drawShape(activeShapePoints);
@@ -166,11 +236,9 @@ function terminateShape() {
     activeShape = undefined;
     activeShapePoints = [];
 }
-handler.setInputAction(function (event) {
-    terminateShape();
-}, ScreenSpaceEventType.RIGHT_CLICK);
-
-
+// handler.setInputAction(function (event) {
+//     terminateShape();
+// }, ScreenSpaceEventType.RIGHT_CLICK);
 
 
 function clearView() {
@@ -180,5 +248,5 @@ function clearView() {
 }
 
 function getCoordinates() {
-
+    console.log("getCoordinates");
 }
