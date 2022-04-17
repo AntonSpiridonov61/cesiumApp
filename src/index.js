@@ -1,86 +1,109 @@
 import {
-        Ion,
-        Viewer,
-        GeometryInstance,
-        RectangleGeometry,
-        Rectangle,
-        PerInstanceColorAppearance,
-        ColorGeometryInstanceAttribute,
-        Color,
-        Primitive,
-        ScreenSpaceEventHandler,
-        defined,
-        ScreenSpaceEventType,
-        HeightReference,
-        ColorMaterialProperty,
-        CallbackProperty,
-        PolygonHierarchy,
-        Camera,
-        CameraEventAggregator,
-        CameraEventType,
-        Cartesian3
-    } from "cesium";
+    Ion,
+    Viewer,
+    GeometryInstance,
+    RectangleGeometry,
+    Rectangle,
+    PerInstanceColorAppearance,
+    ColorGeometryInstanceAttribute,
+    Color,
+    Primitive,
+    ScreenSpaceEventHandler,
+    defined,
+    ScreenSpaceEventType,
+    HeightReference,
+    ColorMaterialProperty,
+    CallbackProperty,
+    PolylineMaterialAppearance,
+    Material,
+    PolygonHierarchy,
+    Cartesian3,
+    Packable, 
+    Cartographic
+} from "cesium";
 import "cesium/Widgets/widgets.css";
 import "../src/css/main.css";
-import "../src/sandcastle.js"
-import json from "./data.json";
+import "./toolbar.js";
 
 
 Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxNTdmYzYwYS02NzM0LTQ2ZDQtYTgyZC1kNDhjYjhlZjY0NGUiLCJpZCI6ODA5MjAsImlhdCI6MTY0MzI4MTc2OX0.PCZP9J3eaORX2LBuWZsX3LixCDGg8s5Pp4GFAHbkuZY';
 
 
-const data = json.ionData
-
 const viewer = new Viewer('cesiumContainer', {
-    selectionIndicator : false,
-    infoBox : false,
-    timeline : false,
-    animation : false,
-    navigationHelpButton : false,
-    navigationInstructionsInitiallyVisible : false
+    selectionIndicator: false,
+    infoBox: false,
+    timeline: false,
+    homeButton: false,
+    animation: false,
+    geocoder: false,
+    navigationInstructionsInitiallyVisible: false,
+    scene3DOnly: true,
+    // requestRenderMode : true,
+    // depthPlaneEllipsoidOffset: 100.0
 });
-
-const scene = viewer.scene;
 viewer.scene.globe.depthTestAgainstTerrain = true;
 
-let instances = [];
-for (let i = 0; i < data.length - 1; i++) {
-    // console.log(Color.lerp(Color.BLACK, Color.WHITE, data[i][2], Color.BLUE).toString())
-    instances.push(new GeometryInstance({
-        geometry : new RectangleGeometry({
-            rectangle : Rectangle.fromDegrees(data[i][1], data[i][0], data[i][1] + 1.0, data[i][0] + 1.0),
-            vertexFormat: PerInstanceColorAppearance.VERTEX_FORMAT,
-            zIndex: 100
-        }),
-        id : data[i],
-        attributes : {
-            color : ColorGeometryInstanceAttribute.fromColor(Color.fromHsl(0.6, 1.0 - data[i][2], 0.3 , 0.95))
-        }
-    }));
+const scene = viewer.scene;
+import json from "./data.json";
+
+const data = json.ionData;
+function getData(data) {
+    let instances = [];
+    let min = Number.MAX_VALUE;
+    let max = Number.MIN_VALUE;
+    for (let i = 0; i < data.length - 1; i++) {
+        if (data[i][2] < min) min = data[i][2]; 
+        if (data[i][2] > max) max = data[i][2]; 
+    }
+
+    for (let i = 0; i < data.length - 1; i++) {
+        data[i][2] = (data[i][2] - min) / (max - min);
+
+        instances.push(new GeometryInstance({
+            geometry : new RectangleGeometry({
+                rectangle : Rectangle.fromDegrees(data[i][1], data[i][0], data[i][1] + 1.0, data[i][0] + 1.0),
+                vertexFormat: PerInstanceColorAppearance.VERTEX_FORMAT
+            }),
+            id : data[i],
+            attributes : {
+                color : ColorGeometryInstanceAttribute.fromColor(Color.fromHsl(0.6 - data[i][2], 1.0, 0.6 , 0.95))
+            }
+        }));
+    }
+    return instances;
 }
 
+let instances = getData(data);
+
 scene.primitives.add(new Primitive({
-  geometryInstances : instances,
-  appearance : new PerInstanceColorAppearance()
+    geometryInstances : instances,
+    appearance : new PerInstanceColorAppearance()
 }));
 
 ///////////////////////////////////
+let drawingMode = "none";
 
-Sandcastle.addToolbarButton("Polygon", function () { 
-    terminateShape();
-    drawingMode = 'polygon';
+toolbar.addToolbarButton("Lasso", function () {
+    // terminateShape();
+    drawingMode = "lasso";
     viewer.scene.screenSpaceCameraController.enableInputs = false;
 });
 
-Sandcastle.addToolbarButton("Line", function () {
-    terminateShape();
-    drawingMode = 'line';
+toolbar.addToolbarButton("Rectangle", function () { 
+    // terminateShape();
+    drawingMode = "rect";
     viewer.scene.screenSpaceCameraController.enableInputs = false;
 });
-Sandcastle.addToolbarButton("Clear", function () { clearView() });
-Sandcastle.addToolbarButton("GetCoord", function () { 
+
+toolbar.addToolbarButton("Clear", function () {
+    drawingMode = "none"; 
+    clearView();
+    viewer.scene.screenSpaceCameraController.enableInputs = true;
+ });
+
+toolbar.addToolbarButton("GetCoord", function () { 
     drawingMode = "none";
-    getCoordinates()
+    getCoordinates();
     viewer.scene.screenSpaceCameraController.enableInputs = true;
 });
 
@@ -98,27 +121,54 @@ function createPoint(worldPosition) {
     return point;
   }
 
+let shape;
+
 function drawShape(positionData) {
-    let shape;
-    if (drawingMode === "line") {
-        shape = viewer.entities.add({
+    let shapeT;
+    if (drawingMode === "lasso") {
+        shapeT = viewer.entities.add({
             polyline: {
-                positions: positionData,
+                positions: new CallbackProperty(function () {
+                    return positionData;
+                }, false),
                 clampToGround: true,
                 width: 3,
-            },
+            }
         });
-    } else if (drawingMode === "polygon") {
-        shape = viewer.entities.add({
+    } else if (drawingMode === "rect") {
+        shapeT = viewer.entities.add({
             rectangle: {
-                coordinates: positionData,
+                coordinates: new CallbackProperty(function () {
+                    return new Rectangle.fromCartesianArray(positionData);
+                }, false),
                 material: new ColorMaterialProperty(
-                    Color.WHITE.withAlpha(0.7)
+                    Color.WHITE.withAlpha(0.2)
                 ),
             },
-        });
+        }
+            // new Primitive({
+            //     geometryInstances: new GeometryInstance({
+            //         geometry: new RectangleGeometry({
+            //             rectangle: new CallbackProperty(function () {
+            //                 return new Rectangle.fromCartesianArray(positionData);
+            //             }, false)
+            //         })
+            //     }),
+            //     appearance: new PolylineMaterialAppearance({
+            //         material: new ColorMaterialProperty(
+            //            Color.WHITE.withAlpha(0.2)
+            //         ),
+            //         renderState: {
+            //             depthTest: {
+            //                 enabled: false  // shut off depth test
+            //             }
+            //         }
+            //     }),
+            //     asynchronous: false   // block or not
+            //   })
+        );
     }
-    return shape;
+    return shapeT;
 }
 
 function drawLasso(event) {
@@ -126,28 +176,20 @@ function drawLasso(event) {
     const startPosition = viewer.scene.pickPosition(event.startPosition);
     const endPosition = viewer.scene.pickPosition(event.endPosition);
     if (defined(endPosition) && defined(startPosition)) {
-        // createPoint(startPosition);
-        drawShape([startPosition, endPosition]);
-        createPoint(endPosition);
+        activeShapePoints.push(endPosition);
+        shape = drawShape([startPosition, endPosition]);
     }
 }
 
-function drawRectangle(event, startPosition) {
+function drawRectangle(event) {
     if (activeShapePoints.length > 1) activeShapePoints.splice(1, 3)
     const endPosition = viewer.scene.pickPosition(event.endPosition);
-    activeShapePoints.push(
-        new Cartesian3(
-            endPosition.x, startPosition.y, endPosition.z
-        )
-    );
-    activeShapePoints.push(endPosition);
-    activeShapePoints.push(
-        new Cartesian3(
-            startPosition.x, endPosition.y, endPosition.z
-        )
-    );
-    
-    // console.log(activeShapePoints);
+    if (defined(endPosition)) {
+        activeShapePoints.push(endPosition);
+        shape = drawShape(activeShapePoints);
+    }
+    console.log(activeShapePoints);
+
     // floatingPoint.position.setValue(endPosition);
     // floatingPoint1.position.setValue(new Cartesian3(
     //     endPosition.x, startPosition.y, startPosition.z
@@ -155,17 +197,8 @@ function drawRectangle(event, startPosition) {
     // floatingPoint2.position.setValue(new Cartesian3(
     //     startPosition.x, endPosition.y, endPosition.z
     // ));
-    const dynamicPositions = new CallbackProperty(function () {
-        return new Rectangle.fromCartesianArray(activeShapePoints);
-    }, false);
-    drawShape(dynamicPositions);
 }
 
-function createNewPoint(startPosition, newPosition) {
-
-}
-
-let drawingMode = "none";
 let activeShapePoints = [];
 let activeShape;
 let floatingPoint;
@@ -174,62 +207,24 @@ let floatingPoint2;
 const handler = new ScreenSpaceEventHandler(viewer.canvas);
 
 handler.setInputAction(function (event) {
-    console.log("leftDown");
+    activeShapePoints = [];
     const startPosition = viewer.scene.pickPosition(event.position);
-    createPoint(startPosition);
-    floatingPoint = createPoint(startPosition);
-    floatingPoint1 = createPoint(startPosition);
-    floatingPoint2 = createPoint(startPosition);
-    activeShapePoints.push(startPosition);
+    // floatingPoint = createPoint(startPosition);
+    // floatingPoint1 = createPoint(startPosition);
+    // floatingPoint2 = createPoint(startPosition);
+    if (defined(startPosition)) {
+        activeShapePoints.push(startPosition);
+        handler.setInputAction(function (event) {
+            if (drawingMode === "lasso") drawLasso(event);
+            if (drawingMode === "rect") drawRectangle(event);
+        }, ScreenSpaceEventType.MOUSE_MOVE);
+    }
 
-    handler.setInputAction(function (event) {
-        if (drawingMode === "line") drawLasso(event);
-        if (drawingMode === "polygon") {
-            const endPosition = viewer.scene.pickPosition(event.endPosition);
-            
-            drawRectangle(event, startPosition);
-        }
-    }, ScreenSpaceEventType.MOUSE_MOVE);
-
-    // const earthPosition = viewer.scene.pickPosition(event.position);
-    // if (defined(earthPosition)) {
-    //     if (activeShapePoints.length === 0) {
-    //         floatingPoint = createPoint(earthPosition);
-    //         activeShapePoints.push(earthPosition);
-    //         const dynamicPositions = new CallbackProperty(function () {
-    //             if (drawingMode === "polygon") {
-    //                 return new PolygonHierarchy(activeShapePoints);
-    //             }
-    //             return activeShapePoints;
-    //         }, false);
-    //         activeShape = drawShape(dynamicPositions);
-    //     }
-    //     activeShapePoints.push(earthPosition);
-    //     createPoint(earthPosition);
-    // }
 }, ScreenSpaceEventType.LEFT_DOWN);
 
 handler.setInputAction(function (event) {
-    console.log("LeftUp");
-    activeShapePoints = [];
-    activeShape = undefined;
     handler.removeInputAction(ScreenSpaceEventType.MOUSE_MOVE);
 }, ScreenSpaceEventType.LEFT_UP);
-
-// handler.setInputAction(function (event) {
-// if (defined(floatingPoint)) {
-//     const startPosition = viewer.scene.pickPosition(event.startPosition);
-//     const newPosition = viewer.scene.pickPosition(event.endPosition);
-//     if (defined(newPosition)) {
-//         createPoint(startPosition);
-//         drawShape([startPosition, newPosition]);
-//         createPoint(newPosition);
-//         // floatingPoint.position.setValue(newPosition);
-//         // activeShapePoints.pop();
-//         // activeShapePoints.push(newPosition);
-//     }
-// }
-// }, ScreenSpaceEventType.MOUSE_MOVE);
 
 function terminateShape() {
     activeShapePoints.pop();
@@ -240,13 +235,9 @@ function terminateShape() {
     activeShape = undefined;
     activeShapePoints = [];
 }
-// handler.setInputAction(function (event) {
-//     terminateShape();
-// }, ScreenSpaceEventType.RIGHT_CLICK);
-
 
 function clearView() {
-    // viewer.entities.removeAll(shape);
+    viewer.entities.removeAll(shape);
     viewer.entities.remove(floatingPoint);
     viewer.entities.remove(activeShape);
 }
