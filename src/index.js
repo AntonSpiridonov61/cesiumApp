@@ -11,19 +11,15 @@ import {
     ScreenSpaceEventHandler,
     defined,
     ScreenSpaceEventType,
-    HeightReference,
     ColorMaterialProperty,
     CallbackProperty,
-    PolylineMaterialAppearance,
-    Material,
-    PolygonHierarchy,
-    Cartesian3,
-    Packable, 
-    Cartographic
+    exportKml,
+    EntityCollection
 } from "cesium";
 import "cesium/Widgets/widgets.css";
 import "../src/css/main.css";
 import "./toolbar.js";
+import toGeoJSON from "togeojson";
 
 
 Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxNTdmYzYwYS02NzM0LTQ2ZDQtYTgyZC1kNDhjYjhlZjY0NGUiLCJpZCI6ODA5MjAsImlhdCI6MTY0MzI4MTc2OX0.PCZP9J3eaORX2LBuWZsX3LixCDGg8s5Pp4GFAHbkuZY';
@@ -38,8 +34,7 @@ const viewer = new Viewer('cesiumContainer', {
     geocoder: false,
     navigationInstructionsInitiallyVisible: false,
     scene3DOnly: true,
-    // requestRenderMode : true,
-    // depthPlaneEllipsoidOffset: 100.0
+    // depthPlaneEllipsoidOffset: 1000.0
 });
 viewer.scene.globe.depthTestAgainstTerrain = true;
 
@@ -84,13 +79,11 @@ scene.primitives.add(new Primitive({
 let drawingMode = "none";
 
 toolbar.addToolbarButton("Lasso", function () {
-    // terminateShape();
     drawingMode = "lasso";
     viewer.scene.screenSpaceCameraController.enableInputs = false;
 });
 
 toolbar.addToolbarButton("Rectangle", function () { 
-    // terminateShape();
     drawingMode = "rect";
     viewer.scene.screenSpaceCameraController.enableInputs = false;
 });
@@ -109,111 +102,25 @@ toolbar.addToolbarButton("GetCoord", function () {
 
 ///////////////////
 
-function createPoint(worldPosition) {
-    const point = viewer.entities.add({
-        position: worldPosition,
-        point: {
-            color: Color.WHITE,
-            pixelSize: 5,
-            heightReference: HeightReference.CLAMP_TO_GROUND,
-        },
-    });
-    return point;
-  }
-
-let shape;
-
-function drawShape(positionData) {
-    let shapeT;
-    if (drawingMode === "lasso") {
-        shapeT = viewer.entities.add({
-            polyline: {
-                positions: new CallbackProperty(function () {
-                    return positionData;
-                }, false),
-                clampToGround: true,
-                width: 3,
-            }
-        });
-    } else if (drawingMode === "rect") {
-        shapeT = viewer.entities.add({
-            rectangle: {
-                coordinates: new CallbackProperty(function () {
-                    return new Rectangle.fromCartesianArray(positionData);
-                }, false),
-                material: new ColorMaterialProperty(
-                    Color.WHITE.withAlpha(0.2)
-                ),
-            },
-        }
-            // new Primitive({
-            //     geometryInstances: new GeometryInstance({
-            //         geometry: new RectangleGeometry({
-            //             rectangle: new CallbackProperty(function () {
-            //                 return new Rectangle.fromCartesianArray(positionData);
-            //             }, false)
-            //         })
-            //     }),
-            //     appearance: new PolylineMaterialAppearance({
-            //         material: new ColorMaterialProperty(
-            //            Color.WHITE.withAlpha(0.2)
-            //         ),
-            //         renderState: {
-            //             depthTest: {
-            //                 enabled: false  // shut off depth test
-            //             }
-            //         }
-            //     }),
-            //     asynchronous: false   // block or not
-            //   })
-        );
-    }
-    return shapeT;
-}
-
-function drawLasso(event) {
-    console.log("moved " + event.startPosition);
-    const startPosition = viewer.scene.pickPosition(event.startPosition);
-    const endPosition = viewer.scene.pickPosition(event.endPosition);
-    if (defined(endPosition) && defined(startPosition)) {
-        activeShapePoints.push(endPosition);
-        shape = drawShape([startPosition, endPosition]);
-    }
-}
-
-function drawRectangle(event) {
-    if (activeShapePoints.length > 1) activeShapePoints.splice(1, 3)
-    const endPosition = viewer.scene.pickPosition(event.endPosition);
-    if (defined(endPosition)) {
-        activeShapePoints.push(endPosition);
-        shape = drawShape(activeShapePoints);
-    }
-    console.log(activeShapePoints);
-
-    // floatingPoint.position.setValue(endPosition);
-    // floatingPoint1.position.setValue(new Cartesian3(
-    //     endPosition.x, startPosition.y, startPosition.z
-    // ));
-    // floatingPoint2.position.setValue(new Cartesian3(
-    //     startPosition.x, endPosition.y, endPosition.z
-    // ));
-}
-
 let activeShapePoints = [];
 let activeShape;
-let floatingPoint;
-let floatingPoint1;
-let floatingPoint2;
+let EntityColl= new EntityCollection();
 const handler = new ScreenSpaceEventHandler(viewer.canvas);
 
 handler.setInputAction(function (event) {
-    activeShapePoints = [];
     const startPosition = viewer.scene.pickPosition(event.position);
-    // floatingPoint = createPoint(startPosition);
-    // floatingPoint1 = createPoint(startPosition);
-    // floatingPoint2 = createPoint(startPosition);
     if (defined(startPosition)) {
         activeShapePoints.push(startPosition);
+
+        const dynamicPositions = new CallbackProperty(function () {
+            if (drawingMode === "rect") {
+                return new Rectangle.fromCartesianArray(activeShapePoints)
+            } else {
+                return activeShapePoints
+            }
+        }, false);
+        activeShape = drawShape(dynamicPositions);
+
         handler.setInputAction(function (event) {
             if (drawingMode === "lasso") drawLasso(event);
             if (drawingMode === "rect") drawRectangle(event);
@@ -223,25 +130,73 @@ handler.setInputAction(function (event) {
 }, ScreenSpaceEventType.LEFT_DOWN);
 
 handler.setInputAction(function (event) {
+    terminateShape();
     handler.removeInputAction(ScreenSpaceEventType.MOUSE_MOVE);
 }, ScreenSpaceEventType.LEFT_UP);
 
+///////////////////////////
+
+function drawShape(positionData) {
+    let shape;
+    if (drawingMode === "lasso") {
+        shape = viewer.entities.add({
+            polyline: {
+                positions: positionData,
+                clampToGround: true,
+                width: 3,
+            }
+        });
+    } else if (drawingMode === "rect") {
+        shape = viewer.entities.add({
+            rectangle: {
+                coordinates: positionData,
+                material: new ColorMaterialProperty(
+                    Color.WHITE.withAlpha(0.7)
+                ),
+            },
+        });
+    }
+    return shape;
+}
+
+function drawLasso(event) {
+    const endPosition = viewer.scene.pickPosition(event.endPosition);
+    if (defined(endPosition)) {
+        activeShapePoints.push(endPosition);
+    }
+}
+
+function drawRectangle(event) {
+    if (activeShapePoints.length > 1) activeShapePoints.splice(1, 1);
+    const endPosition = viewer.scene.pickPosition(event.endPosition);
+    if (defined(endPosition)) {
+        activeShapePoints.push(endPosition);
+    }
+}
+
 function terminateShape() {
-    activeShapePoints.pop();
-    drawShape(activeShapePoints);
-    viewer.entities.remove(floatingPoint);
+    if (drawingMode === "lasso") {
+        activeShapePoints.push(activeShapePoints[0]);
+        EntityColl.add(drawShape(activeShapePoints));
+    }
+    if (drawingMode === "rect") EntityColl.add(drawShape(new Rectangle.fromCartesianArray(activeShapePoints)));
     viewer.entities.remove(activeShape);
-    floatingPoint = undefined;
     activeShape = undefined;
     activeShapePoints = [];
 }
 
 function clearView() {
-    viewer.entities.removeAll(shape);
-    viewer.entities.remove(floatingPoint);
-    viewer.entities.remove(activeShape);
+    viewer.entities.removeAll(EntityColl);
 }
 
 function getCoordinates() {
-    console.log("getCoordinates");
+    console.log(EntityColl);
+    // exportKml({
+    //     entities: EntityColl
+    // }).then(function(result) {
+    //     console.log(result);
+    //       let jsonGEO = toGeoJSON.kml(result)
+    //       console.log(jsonGEO);
+    //  });
+    
 }
