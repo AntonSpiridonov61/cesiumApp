@@ -8,7 +8,6 @@ import {
     ScreenSpaceEventType,
     ColorMaterialProperty,
     CallbackProperty,
-    exportKml,
     EntityCollection,
     Cartographic,
     PolygonHierarchy,
@@ -17,11 +16,9 @@ import {
 import "cesium/Widgets/widgets.css";
 import "../src/css/main.css";
 import "./toolbar.js";
-// import toGeoJSON from "togeojson";
 
 
 Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxNTdmYzYwYS02NzM0LTQ2ZDQtYTgyZC1kNDhjYjhlZjY0NGUiLCJpZCI6ODA5MjAsImlhdCI6MTY0MzI4MTc2OX0.PCZP9J3eaORX2LBuWZsX3LixCDGg8s5Pp4GFAHbkuZY';
-
 
 const viewer = new Viewer('cesiumContainer', {
     selectionIndicator: false,
@@ -35,7 +32,6 @@ const viewer = new Viewer('cesiumContainer', {
 });
 viewer.scene.globe.depthTestAgainstTerrain = true;
 
-const scene = viewer.scene;
 import json from "./data.json";
 
 const data = json.ionData;
@@ -45,12 +41,12 @@ let shapeEntityCollection = new EntityCollection();
 function drawData(data) {
     let min = Number.MAX_VALUE;
     let max = Number.MIN_VALUE;
-    for (let i = 4000; i < 4003; i++) {
+    for (let i = 0; i < data.length; i++) {
         if (data[i][2] < min) min = data[i][2]; 
         if (data[i][2] > max) max = data[i][2]; 
     }
 
-    for (let i = 4000; i < 4003; i++) {
+    for (let i = 0; i < data.length; i++) {
         data[i][2] = (data[i][2] - min) / (max - min);
         dataEntityCollection.add(viewer.entities.add({
             rectangle: {
@@ -141,7 +137,7 @@ function drawShape(positionData) {
             rectangle: {
                 coordinates: positionData,
                 material: new ColorMaterialProperty(
-                    Color.WHITE.withAlpha(0.7)
+                    Color.WHITE.withAlpha(0.5)
                 ),
             },
         });
@@ -157,7 +153,9 @@ function drawLasso(event) {
 }
 
 function drawRectangle(event) {
-    if (activeShapePoints.length > 1) activeShapePoints.splice(1, 1);
+    if (activeShapePoints.length > 1) {
+        activeShapePoints.splice(1, 1);
+    }
     const endPosition = viewer.scene.pickPosition(event.endPosition);
     if (defined(endPosition)) {
         activeShapePoints.push(endPosition);
@@ -197,90 +195,97 @@ function clearView() {
     shapeEntityCollection = new EntityCollection();
 }
 
-function pointInPolygon(lon, lat, polygon) {
-    let odd = false;
+function isPointInPath(point, polygon) {
+    let result = false;
+
+    let lonPoint = point[0][0];
+    let latPoint = point[0][1];
 
     for (let i = 0, j = polygon.length - 1; i < polygon.length; i++) {
-        console.log(polygon[i]);
-        let lonI = Math.toDegrees(polygon[i].longitude);
-        let latI = Math.toDegrees(polygon[i].latitude);
-        let lonJ = Math.toDegrees(polygon[j].longitude);
-        let latJ = Math.toDegrees(polygon[j].latitude);
+        let lonI = polygon[i][0];
+        let latI = polygon[i][1];
+        let lonJ = polygon[j][0];
+        let latJ = polygon[j][1];
 
-        if (((latI > lat) !== (latJ > lat)) && (lon < ((lonJ - lonI) * (lat - latI) / (latJ - latI) + lonI))) {
-            odd = !odd;
-        }
-        j = i;
-    }
-    return odd;
-}
-
-function isPointInPath(lon, lat, polygon) {
-    let num = polygon.length;
-    let j = num - 1;
-    let c = false;
-
-    for (let i = 0; i < num; i++) {
-        let lonI = Math.toDegrees(polygon[i].longitude);
-        let latI = Math.toDegrees(polygon[i].latitude);
-        let lonJ = Math.toDegrees(polygon[j].longitude);
-        let latJ = Math.toDegrees(polygon[j].latitude);
-
-        if ((lon == lonI) && (lat == latI)) {
+        if ((lonPoint == lonI) && (latPoint == latI)) {
             return true;
         }
-        if ((latI > lat) != (latJ > lat)) {
-            let slope = (lon-lonI)*(latJ-latI)-(lonJ-lonI)*(lat-latI);
+        if ((latI > latPoint) != (latJ > latPoint)) {
+            let slope = (lonPoint - lonI) * (latJ - latI) - (lonJ - lonI) * (latPoint - latI);
             if (slope === 0) {
                 return true;
             }
             if ((slope < 0) != (latJ < latI)) {
-                c = !c;
+                result = !result;
             }
         }
         j = i;
     }
-    return c;
+    return result;
+}
+
+function arrayRadiansToDegrees(arrayRadians) {
+    let arrayDegrees = [];
+    for (let i = 0; i < arrayRadians.length; i++) {
+        arrayDegrees.push([
+            Math.toDegrees(arrayRadians[i].longitude),
+            Math.toDegrees(arrayRadians[i].latitude),
+        ])
+    }
+    return arrayDegrees;
+}
+
+function getCountPoint(cartographicPos) {
+    let countPoints = 0;
+
+    for (let indexDataEntity in dataEntityCollection.values) {
+        let entity = dataEntityCollection.values[indexDataEntity].rectangle.coordinates._value;
+        let point = arrayRadiansToDegrees([new Cartographic.fromRadians(entity.west, entity.south)]);
+        if (isPointInPath(point, cartographicPos)) {
+            countPoints++;
+        }
+    }
+    return countPoints;
 }
 
 function getCoordinates() {
+    let features = [];
 
-    let lengthData = dataEntityCollection.values.length
-
-    for (let indexEntity in shapeEntityCollection.values) {
+    for (let indexShape in shapeEntityCollection.values) {
         let cartographicPos = [];
-        if (shapeEntityCollection.values[indexEntity].polygon !== undefined) {
-            let entityPos = shapeEntityCollection.values[indexEntity].polygon.hierarchy._value.positions;
+
+        if (shapeEntityCollection.values[indexShape].polygon !== undefined) {
+            let entityPos = shapeEntityCollection.values[indexShape].polygon.hierarchy._value.positions;
             for (let i = 0; i < entityPos.length; i++) {
                 cartographicPos.push(new Cartographic.fromCartesian(entityPos[i]));
             }
         } else {
-            let entityPos = shapeEntityCollection.values[indexEntity].rectangle.coordinates._value;
-            cartographicPos.push(new Cartographic.fromRadians(entityPos.north, entityPos.west));
-            cartographicPos.push(new Cartographic.fromRadians(entityPos.north, entityPos.east));
-            cartographicPos.push(new Cartographic.fromRadians(entityPos.south, entityPos.east));
-            cartographicPos.push(new Cartographic.fromRadians(entityPos.south, entityPos.west));
+            let entityPos = shapeEntityCollection.values[indexShape].rectangle.coordinates._value;
+            cartographicPos.push(new Cartographic.fromRadians(entityPos.west, entityPos.north));
+            cartographicPos.push(new Cartographic.fromRadians(entityPos.east, entityPos.north));
+            cartographicPos.push(new Cartographic.fromRadians(entityPos.east, entityPos.south));
+            cartographicPos.push(new Cartographic.fromRadians(entityPos.west, entityPos.south));
         }
 
-        let countPoints = 0;
+        let degreesPos = arrayRadiansToDegrees(cartographicPos);
 
-        for (let i = 0; i < lengthData; i++) {
-            let rect = dataEntityCollection.values[i].rectangle.coordinates._value;
-            let cart = new Cartographic.fromRadians(rect.south, rect.west);
-            if(pointInPolygon(Math.toDegrees(cart.longitude), Math.toDegrees(cart.latitude), cartographicPos)) {
-                countPoints++;
+        let countPoints = getCountPoint(degreesPos);
+
+        features.push({
+            "type": "Feature",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": degreesPos
+            },
+            "properties": {
+                "countPoints": countPoints
             }
-        }
-        console.log(countPoints);
-        
-        
+        })
     }
-    // exportKml({
-    //     entities: shapeEntityCollection
-    // }).then(function(result) {
-    //     console.log(result);
-    //     //   let jsonGEO = toGeoJSON.kml(result)
-    //     //   console.log(jsonGEO);
-    //  });
-    
+    let geoJson = {
+        "type": "FeatureCollection",
+        "features": features
+    };
+
+    console.log(JSON.stringify(geoJson));
 }
