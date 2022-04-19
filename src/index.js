@@ -11,7 +11,10 @@ import {
     EntityCollection,
     Cartographic,
     PolygonHierarchy,
-    Math
+    Math,
+    Cartesian3,
+    HeightReference,
+    NearFarScalar
 } from "cesium";
 import "cesium/Widgets/widgets.css";
 import "../src/css/main.css";
@@ -49,12 +52,14 @@ function drawData(data) {
     for (let i = 0; i < data.length; i++) {
         data[i][2] = (data[i][2] - min) / (max - min);
         dataEntityCollection.add(viewer.entities.add({
+            // position: Cartesian3.fromDegrees(data[i][1], data[i][0]),
             rectangle: {
                 coordinates: 
-                    new Rectangle.fromDegrees(
-                        data[i][1], data[i][0], data[i][1] + 0.8, data[i][0] + 0.8
-                    ),
-                material: Color.fromHsl(0.6 - data[i][2], 1.0, 0.6 , 0.9)
+                    new Rectangle.fromCartesianArray([
+                        Cartesian3.fromDegrees(data[i][1] - 0.5, data[i][0] - 0.5),
+                        Cartesian3.fromDegrees(data[i][1] + 0.5, data[i][0] + 0.5)
+                    ]),
+                material: Color.fromHsl(0.6 - data[i][2], 1.0, 0.6 , 0.7)
             }
         }));
     }
@@ -240,7 +245,9 @@ function getCountPoint(cartographicPos) {
 
     for (let indexDataEntity in dataEntityCollection.values) {
         let entity = dataEntityCollection.values[indexDataEntity].rectangle.coordinates._value;
-        let point = arrayRadiansToDegrees([new Cartographic.fromRadians(entity.west, entity.south)]);
+        let point = arrayRadiansToDegrees([new Cartographic.fromRadians(entity.west, entity.north)]);
+        point[0][0] += 0.5;
+        point[0][1] -= 0.5;
         if (isPointInPath(point, cartographicPos)) {
             countPoints++;
         }
@@ -270,22 +277,49 @@ function getCoordinates() {
         let degreesPos = arrayRadiansToDegrees(cartographicPos);
 
         let countPoints = getCountPoint(degreesPos);
+        if (countPoints !== 0) {
+            features.push({
+                "type": "Feature",
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": degreesPos
+                },
+                "properties": {
+                    "countPoints": countPoints
+                }
+            })
+        }
 
-        features.push({
-            "type": "Feature",
-            "geometry": {
-                "type": "Polygon",
-                "coordinates": degreesPos
-            },
-            "properties": {
-                "countPoints": countPoints
-            }
-        })
+        
     }
-    let geoJson = {
-        "type": "FeatureCollection",
-        "features": features
-    };
+    if (features.length !== 0) {
+        let geoJson = {
+            "type": "FeatureCollection",
+            "features": features
+        };
+        let date = new Date();
+        let filename = 
+        date.getFullYear() + "-" + date.getMonth() + "-" + date.getDate() + 
+        "_" + date.getHours() + "-" + date.getMinutes() + "-" + date.getSeconds();
+    
+        downloadFiles(JSON.stringify(geoJson), filename + ".geojson");
+    }
+}
 
-    console.log(JSON.stringify(geoJson));
+function downloadFiles(data, file_name) {
+    var file = new Blob([data], {type: "text/json"});
+    if (window.navigator.msSaveOrOpenBlob) 
+        window.navigator.msSaveOrOpenBlob(file, file_name);
+    else { 
+        var a = document.createElement("a"),
+                url = URL.createObjectURL(file);
+        a.href = url;
+        a.download = file_name;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function() {
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);  
+        }, 0); 
+    }
 }
