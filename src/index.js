@@ -12,13 +12,12 @@ import {
     Cartographic,
     PolygonHierarchy,
     Math,
-    Cartesian3,
-    HeightReference,
-    NearFarScalar
+    Cartesian3
 } from "cesium";
 import "cesium/Widgets/widgets.css";
 import "../src/css/main.css";
 import "./toolbar.js";
+import "./simplify.js"
 
 
 Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIxNTdmYzYwYS02NzM0LTQ2ZDQtYTgyZC1kNDhjYjhlZjY0NGUiLCJpZCI6ODA5MjAsImlhdCI6MTY0MzI4MTc2OX0.PCZP9J3eaORX2LBuWZsX3LixCDGg8s5Pp4GFAHbkuZY';
@@ -36,6 +35,7 @@ const viewer = new Viewer('cesiumContainer', {
 viewer.scene.globe.depthTestAgainstTerrain = true;
 
 import json from "./data.json";
+import simplify from "./simplify.js";
 
 const data = json.ionData;
 let dataEntityCollection = new EntityCollection(); 
@@ -50,9 +50,8 @@ function drawData(data) {
     }
 
     for (let i = 0; i < data.length; i++) {
-        data[i][2] = (data[i][2] - min) / (max - min);
+        data[i][2] = ((data[i][2] - min) / (max - min)) * 0.65;
         dataEntityCollection.add(viewer.entities.add({
-            // position: Cartesian3.fromDegrees(data[i][1], data[i][0]),
             rectangle: {
                 coordinates: 
                     new Rectangle.fromCartesianArray([
@@ -78,6 +77,11 @@ toolbar.addToolbarButton("Lasso", function () {
 toolbar.addToolbarButton("Rectangle", function () { 
     drawingMode = "rect";
     viewer.scene.screenSpaceCameraController.enableInputs = false;
+});
+
+toolbar.addToolbarButton("flight mode", function () { 
+    drawingMode = "none";
+    viewer.scene.screenSpaceCameraController.enableInputs = true;
 });
 
 toolbar.addToolbarButton("Clear", function () {
@@ -107,7 +111,7 @@ handler.setInputAction(function (event) {
             if (drawingMode === "rect") {
                 return new Rectangle.fromCartesianArray(activeShapePoints)
             } else {
-                return activeShapePoints
+                return simplify(activeShapePoints, 10, true)
             }
         }, false);
         activeShape = drawShape(dynamicPositions);
@@ -127,6 +131,7 @@ handler.setInputAction(function (event) {
 
 ///////////////////////////
 
+
 function drawShape(positionData) {
     let shape;
     if (drawingMode === "lasso") {
@@ -134,7 +139,7 @@ function drawShape(positionData) {
             polyline: {
                 positions: positionData,
                 clampToGround: true,
-                width: 3,
+                width: 3
             }
         });
     } else if (drawingMode === "rect") {
@@ -300,9 +305,9 @@ function getCoordinates() {
         let date = new Date();
         let filename = 
         date.getFullYear() + "-" + date.getMonth() + "-" + date.getDate() + 
-        "_" + date.getHours() + "-" + date.getMinutes() + "-" + date.getSeconds();
-    
-        downloadFiles(JSON.stringify(geoJson), filename + ".geojson");
+            "_" + date.getHours() + "-" + date.getMinutes() + "-" + date.getSeconds();
+        
+        downloadFiles(JSON.stringify(geoJson), filename + ".json");
     }
 }
 
